@@ -1,0 +1,67 @@
+# Set environment variables for Android and Java SDKs
+export ANDROID_SDK_ROOT="${HOME}/Library/Android/sdk"
+export ANDROID_HOME="${ANDROID_SDK_ROOT}"
+export JAVA_HOME="/Library/Java/JavaVirtualMachines/temurin-17.jdk/Contents/Home"
+
+# Prepend all necessary directories to the PATH in a single, clean command
+export PATH="${HOME}/development/flutter/bin:${JAVA_HOME}/bin:${ANDROID_HOME}/emulator:${ANDROID_HOME}/platform-tools:${ANDROID_HOME}/cmdline-tools/latest/bin:${ANDROID_HOME}/build-tools/36.0.0:/opt/homebrew/bin:${HOME}/bin:${PATH}"
+
+if [ -f '~/google-cloud-sdk/path.bash.inc' ]; then . '~/google-cloud-sdk/path.bash.inc'; fi
+
+# The next line enables shell command completion for gcloud.
+if [ -f '/Users/daev/google-cloud-sdk/completion.bash.inc' ]; then . '~/google-cloud-sdk/completion.bash.inc'; fi
+eval "$(/opt/homebrew/bin/brew shellenv)"
+
+export NVM_DIR="$HOME/.nvm"
+[ -s "/opt/homebrew/opt/nvm/nvm.sh" ] && \. "/opt/homebrew/opt/nvm/nvm.sh"
+[ -s "/opt/homebrew/opt/nvm/etc/bash_completion.d/nvm" ] && \. "/opt/homebrew/opt/nvm/etc/bash_completion.d/nvm"
+# nvm install node  # install node.js
+# npm install -g @angular/cli  # install the Angular CLI
+
+# Keys
+alias gem="export GEMINI_API_KEY=abcdefghijklmnopqrstuvwxyz ; cd ~/gemini-workingspace ;  gemini"
+alias gemupdate="brew upgrade gemini-cli"
+#alias gemupdate="npm install -g @google/gemini-cli@latest"
+
+# General config
+alias l="ls -l --color=yes"
+alias ll="ls -la --color=yes"
+alias lon="TZ=Europe/London date"
+alias zur="TZ=Europe/Zurich date"
+alias g="glow -p -w0 $1"
+alias k="kubectl"
+alias kpods="kubectl get pods,jobs"
+alias klogs="kubectl logs $1"
+alias swissclassic="mpv https://www.radioswissclassic.ch/de/live/aacp.m3u"
+alias swisssrg="mpv http://stream.srg-ssr.ch/drs2/mp3_128.m3u"
+alias swissjazz="mpv https://www.radioswissjazz.ch/live/aacp.m3u"
+alias lofi="mpv https://stream.rcast.net/m3u/231436"
+alias inspect="skopeo inspect --override-arch amd64 --override-os linux docker://$1"
+alias morebrew="brew search --casks '*' --desc --eval-all | less -r"
+alias uvinit="uv venv ; source .venv/bin/activate ; uv pip install -r requirements.txt"
+alias uvhere="uv venv ; source .venv/bin/activate"
+alias aicopy='find . -type f \( -name "*.yaml" -o -name "*.sh" -o -name "*.py" -o -name "*.md" \) -print0 2>/dev/null | xargs -0 awk 1 | pbcopy'
+alias zed="/Applications/Zed.app/Contents/MacOS/zed"
+alias mmdc='mmdc -p ~/puppeteer-config.json -i "$1" -i "$2"'
+
+qp() {
+  git add "$1" && git commit -m "${2:-updates}" && git push origin main
+}
+
+ghnew() {
+  # Check if a repository name was provided
+  if [ -z "$1" ]; then
+    echo "Error: Please provide a name for your repository like dazdaz/newrepo."
+    return 1
+  fi
+
+  # Initialize a Git repository and make the first commit
+  git init -b main
+  git add .
+  git commit -m "Initial commit"
+
+  # Create the GitHub repository and push the initial commit
+  gh repo create "$1" --public --source=. --push
+
+  echo "‚úÖ Successfully created and pushed repository '$1' to GitHub."
+}
