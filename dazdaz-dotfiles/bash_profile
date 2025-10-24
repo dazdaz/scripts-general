@@ -46,7 +46,7 @@ alias mmdc='mmdc -p ~/puppeteer-config.json -i "$1" -i "$2"'
 
 # GCP Aliases
 alias setproj='gcloud config set project $1'
-alias gaa='cloud auth application-default login'
+alias gaa='gcloud auth application-default login'
 
 qp() {
   git add "$1" && git commit -m "${2:-updates}" && git push origin main
