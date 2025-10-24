@@ -43,6 +43,7 @@ alias uvhere="uv venv ; source .venv/bin/activate"
 alias aicopy='find . -type f \( -name "*.yaml" -o -name "*.sh" -o -name "*.py" -o -name "*.md" \) -print0 2>/dev/null | xargs -0 awk 1 | pbcopy'
 alias zed="/Applications/Zed.app/Contents/MacOS/zed"
 alias mmdc='mmdc -p ~/puppeteer-config.json -i "$1" -i "$2"'
+alias setproj='gcloud config set project $1'
 
 qp() {
   git add "$1" && git commit -m "${2:-updates}" && git push origin main
