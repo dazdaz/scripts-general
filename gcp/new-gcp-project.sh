@@ -3,7 +3,7 @@
 set -e
 
 # === CONFIGURE THESE ===
-PROJECT_ID="spacelab-x"  # or use spacelab-$(date +%s) for uniqueness
+PROJECT_ID="spacelab-123"  # or use spacelab-$(date +%s) for uniqueness
 DISPLAY_NAME="My Dev Project"
 BILLING_ACCOUNT_ID="01EF07-AAAAAA-BBBBBB"
 USER="user:user@myhost.org"
