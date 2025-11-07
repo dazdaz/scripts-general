@@ -1,170 +1,179 @@
 #!/bin/bash
+# filename: new-gcp-project-free.sh
+# STAR WARS EDITION — FULLY UNLEASHED
+# Run as Organization Administrator
+# Now with --free flag = total galactic domination (no restrictions)
+# ------------------------------------------------------------
 set -euo pipefail
 
-# === CONFIGURATION (only change these) ===
-BILLING_ACCOUNT_ID="01EF07-AAAAAA-BBBBBB"      # Your billing account
-USER="user:user@myhost.org"                    # Your identity (owner)
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+RED='\033[0;31m'
+NC='\033[0m'
+
+log()   { echo -e "${GREEN}[+] $1${NC}"; }
+warn()  { echo -e "${YELLOW}[!] $1${NC}"; }
+error() { echo -e "${RED}[ERROR] $1${NC}"; exit 1; }
+
+# === ORG ADMIN CHECK ===
+log "Verifying Organization Administrator access..."
+if ! gcloud organizations list --format="value(name)" >/dev/null 2>&1; then
+  error "NO ORGANIZATION ACCESS!\nYou need roles/resourcemanager.organizationAdmin at org level."
+fi
+log "Organization Administrator confirmed — the Empire approves."
+
+# === FLAGS ===
 FREE_MODE=false
 ADD_TIMESTAMP=false
 
-# === Help & Argument Parsing ===
 show_help() {
   cat <<EOF
-Usage: $0 [--free] [--timestamp] <project-id-1> [project-id-2] ...
+Usage: $0 [--free] [--timestamp] <project-id> "<Display Name>" [billing-id]
 
-Options:
-  --free        Apply fully relaxed org policies (allow external IPs, no Shielded VM, etc.)
-  --timestamp   Append current timestamp to each project ID for uniqueness
-  -h, --help    Show this help
+STAR WARS EXAMPLES:
+  $0 deathstar-prod "Death Star - Production" 
+  $0 --free borg-prod "Borg Cube - Unrestricted Sandbox"
+  $0 --free --timestamp ewok "Ewok Foundry" 01A2B3-CCCCCC-DDDDDD
 
-Examples:
-  $0 --free my-sandbox-01
-  $0 --free --timestamp gpu-playground-nov25
-  $0 --timestamp secure-prod-app-us secure-prod-app-eu
-
-Required: At least one project ID must be provided.
+Flags:
+  --free       = FULL CHAOS MODE → removes ALL org policies (external IPs, SA keys, Shielded VM, etc.)
+  --timestamp  = appends -$(date +%s) for guaranteed uniqueness
 EOF
   exit 1
 }
 
-if [ $# -eq 0 ]; then
-  echo "Error: No project ID provided."
-  show_help
-fi
-
-# Parse flags
 while [[ $# -gt 0 ]]; do
   case $1 in
-    --free)
-      FREE_MODE=true
-      shift
-      ;;
-    --timestamp)
-      ADD_TIMESTAMP=true
-      shift
-      ;;
-    -h|--help)
-      show_help
-      ;;
-    *)
-      # All remaining args are project IDs
-      break
-      ;;
+    --free)       FREE_MODE=true; shift ;;
+    --timestamp)  ADD_TIMESTAMP=true; shift ;;
+    -h|--help)    show_help ;;
+    *)            break ;;
   esac
 done
 
-# Now $1, $2, ... are project IDs
-if [ $# -eq 0 ]; then
-  echo "Error: No project IDs specified after flags."
-  show_help
-fi
+[[ $# -lt 2 ]] && show_help
 
-declare -a PROJECTS=("$@")
+PROJECT_ID="$1"
+DISPLAY_NAME="$2"
+BILLING_ACCOUNT_ID="${3:-}"
 
-# Append timestamp if requested
+# === TIMESTAMP ===
 if $ADD_TIMESTAMP; then
-  TIMESTAMP=$(date +%s)
-  for i in "${!PROJECTS[@]}"; do
-    PROJECTS[i]="${PROJECTS[i]}-$TIMESTAMP"
-  done
+  TS=$(date +%s)
+  PROJECT_ID="${PROJECT_ID}-${TS}"
+  log "Timestamp applied → $PROJECT_ID"
 fi
 
-echo "Creating project(s): ${PROJECTS[*]}"
-$FREE_MODE && echo "FREE MODE: All restrictions disabled"
-$ADD_TIMESTAMP && echo "Timestamp suffix applied"
-echo
+# === VALIDATE ID ===
+if ! [[ "$PROJECT_ID" =~ ^[a-z0-9]([-a-z0-9]{4,28}[a-z0-9])?$ ]]; then
+  error "Invalid project ID: $PROJECT_ID\nMust be 6-30 chars, lowercase, numbers, hyphens only."
+fi
 
-# === Function: Apply fully relaxed policies ===
-apply_free_policies() {
-  local proj=$1
-  echo "Applying unrestricted org policies to $proj ..."
+# === AUTO BILLING ===
+if [[ -z "$BILLING_ACCOUNT_ID" ]]; then
+  BILLING_ACCOUNT_ID=$(gcloud beta billing accounts list --filter="open=true" --format="value(name)" --limit=1)
+  [[ -z "$BILLING_ACCOUNT_ID" ]] && error "No open billing accounts!"
+  log "Auto billing: $BILLING_ACCOUNT_ID"
+else
+  log "Using billing: $BILLING_ACCOUNT_ID"
+fi
 
-  cat <<EOF > /tmp/free_policy_$$.yaml
-constraint: constraints/compute.trustedImageProjects
+USER="user:$(gcloud config get-value account)"
+
+# === CREATE PROJECT ===
+log "Creating $PROJECT_ID — $DISPLAY_NAME"
+gcloud projects create "$PROJECT_ID" --name="$DISPLAY_NAME" --quiet || \
+  error "Project creation failed (ID taken or invalid)"
+
+log "Linking billing..."
+gcloud beta billing projects link "$PROJECT_ID" --billing-account="$BILLING_ACCOUNT_ID" --quiet
+
+log "Granting you Owner..."
+gcloud projects add-iam-policy-binding "$PROJECT_ID" --member="$USER" --role="roles/owner" --quiet
+
+log "Enabling core APIs..."
+gcloud services enable \
+  cloudresourcemanager.googleapis.com \
+  iam.googleapis.com \
+  serviceusage.googleapis.com \
+  cloudbilling.googleapis.com \
+  --project="$PROJECT_ID" --quiet
+
+# === FREE MODE: TOTAL POLICY ANNIHILATION ===
+if $FREE_MODE; then
+  log "FREE MODE ACTIVATED — removing ALL restrictions..."
+  apply_free() {
+    local p=$1
+    # Allow everything
+    for constraint in \
+      compute.vmExternalIpAccess \
+      compute.restrictSharedVpcSubnetworks \
+      compute.restrictSharedVpcHostProjects \
+      compute.restrictVpcPeering \
+      compute.vmCanIpForward \
+      iam.allowedPolicyMemberDomains \
+      compute.trustedImageProjects; do
+      cat > /tmp/free.yaml <<EOF
+constraint: constraints/$constraint
 listPolicy:
   allValues: ALLOW
 EOF
-  gcloud resource-manager org-policies set-policy /tmp/free_policy_$$.yaml --project="$proj" --quiet
-  rm -f /tmp/free_policy_$$.yaml
+      gcloud resource-manager org-policies set-policy /tmp/free.yaml --project="$p" --quiet || true
+    done
 
-  local policies=(
-    compute.vmExternalIpAccess
-    compute.restrictSharedVpcSubnetworks
-    compute.restrictSharedVpcHostProjects
-    compute.restrictVpcPeering
-    compute.vmCanIpForward
-    iam.allowedPolicyMemberDomains
-  )
-  for p in "${policies[@]}"; do
-    cat <<EOF > /tmp/free_policy_$$.yaml
-constraint: constraints/$p
-listPolicy:
-  allValues: ALLOW
+    # Disable boolean enforcements
+    gcloud resource-manager org-policies disable-enforce compute.requireShieldedVm --project="$p" --quiet || true
+    gcloud resource-manager org-policies disable-enforce compute.requireOsLogin --project="$p" --quiet || true
+    gcloud resource-manager org-policies disable-enforce iam.disableServiceAccountKeyCreation --project="$p" --quiet || true
+    gcloud resource-manager org-policies disable-enforce iam.disableServiceAccountCreation --project="$p" --quiet || true
+
+    rm -f /tmp/free.yaml
+    log "All org policies DISABLED on $p — TOTAL FREEDOM"
+  }
+  apply_free "$PROJECT_ID"
+fi
+
+# === GENERATE HELPER SCRIPTS ===
+cat > setproj.sh <<EOF
+#!/bin/bash
+export PROJECT_ID="$PROJECT_ID"
+export GOOGLE_CLOUD_PROJECT="\$PROJECT_ID"
+gcloud config set project "\$PROJECT_ID" >/dev/null 2>&1 || true
+echo -e "${GREEN}Switched → \$PROJECT_ID${NC}"
+echo " $DISPLAY_NAME"
+echo " https://console.cloud.google.com/?project=\$PROJECT_ID"
 EOF
-    gcloud resource-manager org-policies set-policy /tmp/free_policy_$$.yaml --project="$proj" --quiet
-    rm -f /tmp/free_policy_$$.yaml
-  done
+chmod +x setproj.sh
 
-  # Disable boolean enforcement
-  gcloud resource-manager org-policies disable-enforce compute.requireShieldedVm --project="$proj" --quiet || true
-  gcloud resource-manager org-policies disable-enforce compute.requireOsLogin --project="$proj" --quiet || true
-  gcloud resource-manager org-policies disable-enforce iam.disableServiceAccountKeyCreation --project="$proj" --quiet || true
-  gcloud resource-manager org-policies disable-enforce iam.disableServiceAccountCreation --project="$proj" --quiet || true
+cat > owner-setup.sh <<EOF
+#!/bin/bash
+echo -e "${CYAN}Fixing ADC for $PROJECT_ID${NC}"
+gcloud auth application-default set-quota-project "$PROJECT_ID" --quiet
+echo -e "${GREEN}ADC fixed — Terraform/gsutil ready!${NC}"
+echo "Run: source setproj.sh"
+EOF
+chmod +x owner-setup.sh
 
-  echo "All restrictions removed from $proj"
-}
-
-# === Main Loop ===
-for PROJECT_ID in "${PROJECTS[@]}"; do
-  echo "Creating project: $PROJECT_ID"
-
-  gcloud projects create "$PROJECT_ID" \
-    --name="Dev Project - $PROJECT_ID" \
-    --labels=cost-center=dev \
-    --quiet
-
-  echo "Linking billing..."
-  gcloud beta billing projects link "$PROJECT_ID" \
-    --billing-account="$BILLING_ACCOUNT_ID" \
-    --quiet
-
-  echo "Granting OWNER to $USER..."
-  gcloud projects add-iam-policy-binding "$PROJECT_ID" \
-    --member="$USER" \
-    --role="roles/owner" \
-    --quiet
-
-  echo "Granting Service Usage Consumer..."
-  gcloud projects add-iam-policy-binding "$PROJECT_ID" \
-    --member="$USER" \
-    --role="roles/serviceusage.serviceUsageConsumer" \
-    --quiet
-
-  echo "Enabling core APIs..."
-  gcloud services enable \
-    cloudresourcemanager.googleapis.com \
-    serviceusage.googleapis.com \
-    iam.googleapis.com \
-    --project="$PROJECT_ID" --quiet
-
-  gcloud config set project "$PROJECT_ID" --quiet
-
-  if $FREE_MODE; then
-    apply_free_policies "$PROJECT_ID"
-  fi
-
-  echo "Setting ADC quota project..."
-  gcloud auth application-default set-quota-project "$PROJECT_ID" --quiet || true
-
-  echo "READY: $PROJECT_ID"
-  if $FREE_MODE; then
-    echo "   • Fully unrestricted (--free)"
-  fi
-  echo
-done
-
-echo "ALL PROJECTS CREATED SUCCESSFULLY!"
-echo "Current default project:"
-gcloud config get-value project
+# === FINAL GALACTIC VICTORY ===
+clear
 echo
-echo "Tip: Use --free for personal sandboxes, --timestamp for unique names"
+echo "=================================================="
+echo "        PROJECT CREATED — THE FORCE IS STRONG"
+echo "=================================================="
+echo " ID           : $PROJECT_ID"
+echo " Name         : $DISPLAY_NAME"
+echo " Console      : https://console.cloud.google.com/?project=$PROJECT_ID"
+echo " Billing      : $BILLING_ACCOUNT_ID"
+$FREE_MODE && echo " RESTRICTIONS : NONE — --free mode active"
+echo
+echo "=================================================="
+echo " SEND TO NEW OWNER:"
+echo "   ${CYAN}setproj.sh${NC}    → source anytime"
+echo "   ${CYAN}owner-setup.sh${NC} → run ONCE on their machine"
+echo
+echo "   ${YELLOW}./owner-setup.sh${NC}"
+echo "   ${YELLOW}source setproj.sh${NC}"
+echo "=================================================="
+echo "Never run owner-setup.sh as Org Admin!"
+echo "=================================================="
