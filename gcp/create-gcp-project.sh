@@ -1,5 +1,5 @@
 #!/bin/bash
-# filename: new-gcp-project.sh
+# filename: create-gcp-project.sh
 # ------------------------------------------------------------
 # RUN THIS SCRIPT AS ORGANIZATION ADMINISTRATOR ONLY!
 # ------------------------------------------------------------
