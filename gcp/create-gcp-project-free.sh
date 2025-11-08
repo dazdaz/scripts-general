@@ -1,5 +1,5 @@
 #!/bin/bash
-# filename: new-gcp-project-free.sh
+# filename: create-gcp-project-free.sh
 # STAR WARS EDITION — FULLY UNLEASHED
 # Run as Organization Administrator
 # Now with --free flag = total galactic domination (no restrictions)
