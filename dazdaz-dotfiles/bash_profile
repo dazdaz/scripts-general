@@ -69,3 +69,17 @@ ghnew() {
 
   echo "‚úÖ Successfully created and pushed repository '$1' to GitHub."
 }
+
+gfind() {
+    # 1. Capture all arguments (so you don't need to use quotes for multiple words)
+    local query="$*"
+    
+    # 2. Replace spaces in your query with wildcards (*)
+    # This ensures "my file" matches "my-file", "my_file", "MyFile", etc.
+    local pattern="${query// /*}"
+
+    # 3. Search My Drive using case-insensitive search (-iname)
+    find ~/Library/CloudStorage/"GoogleDrive-my@host.com/My Drive" \
+        -iname "*$pattern*" \
+        2>/dev/null
+}
