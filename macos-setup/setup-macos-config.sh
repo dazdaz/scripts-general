@@ -1,5 +1,4 @@
 #!/bin/bash
-
 # Log file for debugging
 LOG_FILE=~/macos-config-setup.log
 echo "Starting configuration script at $(date)" > "$LOG_FILE"
@@ -40,24 +39,20 @@ apply_setting() {
     local plist_file=~/Library/Preferences/"$domain".plist
     local command_prefix="defaults write"
     local read_prefix="defaults read"
-
     if [ "$current_host" = "-currentHost" ]; then
         command_prefix="defaults -currentHost write"
         read_prefix="defaults -currentHost read"
         plist_file=$(find_byhost_plist "$domain")
     fi
-
     echo "Setting $domain $key to $value (type: $type)..." | tee -a "$LOG_FILE"
     # Clear defaults cache and Finder
     killall cfprefsd 2>/dev/null
     killall Finder 2>/dev/null
     sleep 1 # Wait for processes to terminate
-
     # Normalize type for PlistBuddy
     local plist_type="$type"
     [ "$type" = "-bool" ] && plist_type="bool"
     [ "$type" = "-int" ] && plist_type="integer"
-
     # Use PlistBuddy for Finder settings, defaults for others
     if [ "$domain" = "com.apple.finder" ]; then
         fix_permissions "$plist_file"
@@ -99,7 +94,6 @@ apply_setting() {
             fi
         fi
     fi
-
     # Verify setting
     echo "Verifying $key..." | tee -a "$LOG_FILE"
     local read_output
@@ -163,6 +157,7 @@ else
     echo "Failed to disable Gatekeeper. On macOS Sequoia, you may need to confirm this change manually." | tee -a "$LOG_FILE"
     echo "Please go to System Settings > Privacy & Security and approve the change to allow apps from anywhere." | tee -a "$LOG_FILE"
 fi
+
 # Verify Gatekeeper status
 spctl --status 2>>"$LOG_FILE" | grep -q "assessments disabled"
 if [ $? -eq 0 ]; then
@@ -176,6 +171,39 @@ apply_setting com.apple.assistant.support "AIConsentStatus" false -bool
 
 # Disable Personalized Ads (Privacy & Security)
 apply_setting com.apple.AdLib "allowApplePersonalizedAdvertising" false -bool
+
+# === Added: Create 'subl' command-line symlink for Sublime Text ===
+echo "Creating command-line symlink for Sublime Text..." | tee -a "$LOG_FILE"
+
+# Ensure /usr/local/bin exists and is writable (it usually is on macOS)
+if [ ! -d "/usr/local/bin" ]; then
+    echo "Creating /usr/local/bin directory..." | tee -a "$LOG_FILE"
+    sudo mkdir -p /usr/local/bin 2>>"$LOG_FILE"
+fi
+
+# Check if the symlink already exists
+if [ -L "/usr/local/bin/subl" ]; then
+    echo "Symlink /usr/local/bin/subl already exists. Skipping creation." | tee -a "$LOG_FILE"
+elif [ -e "/usr/local/bin/subl" ]; then
+    echo "A non-symlink file exists at /usr/local/bin/subl. Backing up and replacing..." | tee -a "$LOG_FILE"
+    sudo mv /usr/local/bin/subl /usr/local/bin/subl.bak 2>>"$LOG_FILE"
+fi
+
+# Create the symlink (requires sudo because /usr/local/bin is system-protected)
+sudo ln -s "/Applications/Sublime Text.app/Contents/SharedSupport/bin/subl" /usr/local/bin/subl 2>>"$LOG_FILE"
+
+if [ $? -eq 0 ]; then
+    echo "Successfully created 'subl' command-line tool." | tee -a "$LOG_FILE"
+else
+    echo "Failed to create 'subl' symlink. Check permissions or whether Sublime Text is installed." | tee -a "$LOG_FILE"
+fi
+
+# Verify the command works
+if command -v subl >/dev/null 2>&1; then
+    echo "Verified: 'subl' command is now available in Terminal." | tee -a "$LOG_FILE"
+else
+    echo "Warning: 'subl' command is not in PATH or not working." | tee -a "$LOG_FILE"
+fi
 
 # Restart Finder to apply changes
 killall Finder 2>/dev/null
