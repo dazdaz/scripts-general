@@ -71,15 +71,72 @@ ghnew() {
 }
 
 gfind() {
-    # 1. Capture all arguments (so you don't need to use quotes for multiple words)
-    local query="$*"
-    
-    # 2. Replace spaces in your query with wildcards (*)
-    # This ensures "my file" matches "my-file", "my_file", "MyFile", etc.
+    local show_link=false
+    local mask=""
+    local query_parts=()
+
+    # --- OS DETECTION & PATH SETUP ---
+    local drive_path=""
+    if [[ "$(uname)" == "Darwin" ]]; then
+        drive_path=~/Library/CloudStorage/"GoogleDrive-user@myhost.com/My Drive"
+    else
+        drive_path=~/GoogleDrive
+    fi
+
+    # 1. Flexible Argument Parsing
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -link) show_link=true; shift ;;
+            -mask) mask="$2"; shift 2 ;;
+            *) query_parts+=("$1"); shift ;;
+        esac
+    done
+
+    local query="${query_parts[*]}"
     local pattern="${query// /*}"
 
-    # 3. Search My Drive using case-insensitive search (-iname)
-    find ~/Library/CloudStorage/"GoogleDrive-my@host.com/My Drive" \
-        -iname "*$pattern*" \
-        2>/dev/null
+    # 2. Execute
+    local cmd=(find "$drive_path" -iname "*$pattern*")
+    if [[ -n "$mask" ]]; then
+        cmd+=(-not -iname "*$mask*")
+    fi
+
+    if [[ "$show_link" == true ]]; then
+        "${cmd[@]}" 2>/dev/null | while read -r file; do
+            echo "$file"
+            
+            # Check for Google Workspace extensions
+            if [[ "$file" =~ \.(gdoc|gsheet|gslides|gdraw|gform|gtable)$ ]]; then
+                
+                # 1. Extract the 'doc_id' (The file content only has the ID, not the URL)
+                # We use 'strings' to be safe, then grep for the ID pattern.
+                local doc_id=$(strings "$file" | grep -o '"doc_id":"[^"]*"' | cut -d'"' -f4)
+
+                if [[ -n "$doc_id" ]]; then
+                    local base_url="https://docs.google.com"
+                    local full_url=""
+
+                    # 2. Build the URL based on the file extension
+                    case "$file" in
+                        *.gdoc)   full_url="$base_url/document/d/$doc_id" ;;
+                        *.gsheet) full_url="$base_url/spreadsheets/d/$doc_id" ;;
+                        *.gslides) full_url="$base_url/presentation/d/$doc_id" ;;
+                        *.gdraw)  full_url="$base_url/drawings/d/$doc_id" ;;
+                        *.gform)  full_url="$base_url/forms/d/$doc_id" ;;
+                        *)        full_url="$base_url/open?id=$doc_id" ;; 
+                    esac
+                    
+                    echo -e "   \033[34m$full_url\033[0m"
+                else
+                    # Fallback: If no doc_id found, check for a full URL (legacy format)
+                    local legacy_url=$(strings "$file" | grep -o 'https://docs.google.com[^"]*' | head -n 1)
+                    if [[ -n "$legacy_url" ]]; then
+                        echo -e "   \033[34m$legacy_url\033[0m"
+                    fi
+                fi
+            fi
+        done
+    else
+        "${cmd[@]}" 2>/dev/null
+    fi
 }
