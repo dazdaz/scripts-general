@@ -77,7 +77,7 @@ gfind() {
     # --- OS DETECTION & PATH SETUP ---
     local drive_path=""
     if [[ "$(uname)" == "Darwin" ]]; then
-        drive_path="$HOME/Library/CloudStorage/GoogleDrive-daev@google.com/My Drive"
+        drive_path="$HOME/Library/CloudStorage/GoogleDrive-me@firm.com/My Drive"
     else
         drive_path="$HOME/GoogleDrive"
     fi
