@@ -71,22 +71,20 @@ ghnew() {
 }
 
 gfind() {
-    local show_link=false
     local mask=""
     local query_parts=()
 
     # --- OS DETECTION & PATH SETUP ---
     local drive_path=""
     if [[ "$(uname)" == "Darwin" ]]; then
-        drive_path=~/Library/CloudStorage/"GoogleDrive-user@myhost.com/My Drive"
+        drive_path="$HOME/Library/CloudStorage/GoogleDrive-daev@google.com/My Drive"
     else
-        drive_path=~/GoogleDrive
+        drive_path="$HOME/GoogleDrive"
     fi
 
     # 1. Flexible Argument Parsing
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            -link) show_link=true; shift ;;
             -mask) mask="$2"; shift 2 ;;
             *) query_parts+=("$1"); shift ;;
         esac
@@ -95,48 +93,72 @@ gfind() {
     local query="${query_parts[*]}"
     local pattern="${query// /*}"
 
-    # 2. Execute
+    # 2. Build the Find Command
     local cmd=(find "$drive_path" -iname "*$pattern*")
     if [[ -n "$mask" ]]; then
         cmd+=(-not -iname "*$mask*")
     fi
 
-    if [[ "$show_link" == true ]]; then
-        "${cmd[@]}" 2>/dev/null | while read -r file; do
-            echo "$file"
+    # 3. Execute and Process Links
+    "${cmd[@]}" 2>/dev/null | while read -r file; do
+        echo "$file"
+
+        if [[ "$file" =~ \.(gdoc|gsheet|gslides|gdraw|gform|gtable)$ ]]; then
             
-            # Check for Google Workspace extensions
-            if [[ "$file" =~ \.(gdoc|gsheet|gslides|gdraw|gform|gtable)$ ]]; then
-                
-                # 1. Extract the 'doc_id' (The file content only has the ID, not the URL)
-                # We use 'strings' to be safe, then grep for the ID pattern.
-                local doc_id=$(strings "$file" | grep -o '"doc_id":"[^"]*"' | cut -d'"' -f4)
+            # --- PYTHON EXTRACTION ---
+            # Now uses 'except Exception' instead of bare 'except' to ensure
+            # sys.exit(0) actually stops the script after the first match.
+            
+            local extracted_url=$(python3 -c "
+import sys, json, re, signal
 
-                if [[ -n "$doc_id" ]]; then
-                    local base_url="https://docs.google.com"
-                    local full_url=""
+def handler(signum, frame):
+    sys.exit(0)
 
-                    # 2. Build the URL based on the file extension
-                    case "$file" in
-                        *.gdoc)   full_url="$base_url/document/d/$doc_id" ;;
-                        *.gsheet) full_url="$base_url/spreadsheets/d/$doc_id" ;;
-                        *.gslides) full_url="$base_url/presentation/d/$doc_id" ;;
-                        *.gdraw)  full_url="$base_url/drawings/d/$doc_id" ;;
-                        *.gform)  full_url="$base_url/forms/d/$doc_id" ;;
-                        *)        full_url="$base_url/open?id=$doc_id" ;; 
-                    esac
-                    
-                    echo -e "   \033[34m$full_url\033[0m"
-                else
-                    # Fallback: If no doc_id found, check for a full URL (legacy format)
-                    local legacy_url=$(strings "$file" | grep -o 'https://docs.google.com[^"]*' | head -n 1)
-                    if [[ -n "$legacy_url" ]]; then
-                        echo -e "   \033[34m$legacy_url\033[0m"
-                    fi
-                fi
+# Set 1 second timeout
+signal.signal(signal.SIGALRM, handler)
+signal.alarm(1)
+
+try:
+    with open(sys.argv[1], 'r', errors='ignore') as f:
+        content = f.read()
+        
+        # Method A: Try standard JSON parsing
+        try:
+            data = json.loads(content)
+            if 'url' in data:
+                print(data['url'])
+                sys.exit(0)
+            if 'doc_id' in data:
+                doc_id = data['doc_id']
+                if sys.argv[1].endswith('.gdoc'): print(f'https://docs.google.com/document/d/{doc_id}')
+                elif sys.argv[1].endswith('.gsheet'): print(f'https://docs.google.com/spreadsheets/d/{doc_id}')
+                elif sys.argv[1].endswith('.gslides'): print(f'https://docs.google.com/presentation/d/{doc_id}')
+                else: print(f'https://docs.google.com/open?id={doc_id}')
+                sys.exit(0)
+        except Exception:
+            # Only catch logic errors, allow SystemExit to pass through
+            pass
+
+        # Method B: Regex Fallback (Only runs if JSON failed)
+        url_match = re.search(r'https://docs\.google\.com[^\"]*', content)
+        if url_match:
+            print(url_match.group(0))
+            sys.exit(0)
+            
+        doc_id_match = re.search(r'\"doc_id\":\"([^\"]+)\"', content)
+        if doc_id_match:
+            doc_id = doc_id_match.group(1)
+            print(f'https://docs.google.com/open?id={doc_id}')
+            sys.exit(0)
+
+except Exception:
+    pass
+" "$file" 2>/dev/null)
+
+            if [[ -n "$extracted_url" ]]; then
+                echo -e "   \033[34m$extracted_url\033[0m"
             fi
-        done
-    else
-        "${cmd[@]}" 2>/dev/null
-    fi
+        fi
+    done
 }
