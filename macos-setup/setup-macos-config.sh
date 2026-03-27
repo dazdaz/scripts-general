@@ -1,4 +1,5 @@
 #!/bin/bash
+# macOS Configuration Script + Dock Cleanup
 # Log file for debugging
 LOG_FILE=~/macos-config-setup.log
 echo "Starting configuration script at $(date)" > "$LOG_FILE"
@@ -48,7 +49,7 @@ apply_setting() {
     # Clear defaults cache and Finder
     killall cfprefsd 2>/dev/null
     killall Finder 2>/dev/null
-    sleep 1 # Wait for processes to terminate
+    sleep 1
     # Normalize type for PlistBuddy
     local plist_type="$type"
     [ "$type" = "-bool" ] && plist_type="bool"
@@ -110,102 +111,126 @@ apply_setting() {
     fi
 }
 
+# ========================
+# Main Configuration Starts
+# ========================
+
 # Stop Finder and clear defaults cache
 killall Finder 2>/dev/null
 killall cfprefsd 2>/dev/null
 
-# Enable Hard Disks and Connected Servers on Desktop (Finder General)
+# Enable Hard Disks and Connected Servers on Desktop
 apply_setting com.apple.finder ShowHardDrivesOnDesktop true -bool
 apply_setting com.apple.finder ShowMountedServersOnDesktop true -bool
 
-# Enable Home in Sidebar (Movies, Music, Pictures auto-appear under Favorites)
+# Enable Home in Sidebar + other Finder tweaks
 apply_setting com.apple.finder ShowHomeFolderInSidebar true -bool
 apply_setting com.apple.finder _FXShowPosixPathInTitle true -bool
-# Note: If Movies/Music/Pictures don't show, enable manually in Finder > Preferences > Sidebar
 
-# Enable Show All Filename Extensions (Finder Advanced)
+# Show All Filename Extensions
 apply_setting NSGlobalDomain AppleShowAllExtensions true -bool
 
-# Show System Info (Hostname) on Login Screen (System-wide)
+# Show System Info (Hostname) on Login Screen
 echo "Setting login screen info (requires sudo)..." | tee -a "$LOG_FILE"
 sudo defaults write /Library/Preferences/com.apple.loginwindow AdminHostInfo HostName 2>>"$LOG_FILE"
 if [ $? -eq 0 ]; then
     echo "Login screen info set successfully." | tee -a "$LOG_FILE"
 else
     echo "Failed to set login screen info. Check sudo permissions." | tee -a "$LOG_FILE"
-    exit 1
 fi
 
 # Add Quit Option to Finder Menu
 apply_setting com.apple.finder QuitMenuItem true -bool
 
-# Enable Trackpad Secondary Click in Bottom Right Corner
+# Enable Trackpad Secondary Click (Bottom Right Corner)
 apply_setting com.apple.driver.AppleBluetoothMultitouch.trackpad TrackpadCornerSecondaryClick 2 -int
 apply_setting com.apple.driver.AppleBluetoothMultitouch.trackpad TrackpadRightClick true -bool
 apply_setting NSGlobalDomain com.apple.trackpad.trackpadCornerClickBehavior 1 -int -currentHost
 apply_setting NSGlobalDomain com.apple.trackpad.enableSecondaryClick true -bool -currentHost
-# For non-Bluetooth trackpads (e.g., MacBook built-in)
 apply_setting com.apple.AppleMultitouchTrackpad TrackpadCornerSecondaryClick 2 -int
 apply_setting com.apple.AppleMultitouchTrackpad TrackpadRightClick true -bool
 
-# Disable Gatekeeper (requires sudo)
+# Disable Gatekeeper
 echo "Disabling Gatekeeper (requires sudo)..." | tee -a "$LOG_FILE"
 sudo spctl --master-disable 2>>"$LOG_FILE"
 if [ $? -eq 0 ]; then
     echo "Gatekeeper disabled successfully." | tee -a "$LOG_FILE"
 else
-    echo "Failed to disable Gatekeeper. On macOS Sequoia, you may need to confirm this change manually." | tee -a "$LOG_FILE"
-    echo "Please go to System Settings > Privacy & Security and approve the change to allow apps from anywhere." | tee -a "$LOG_FILE"
+    echo "Failed to disable Gatekeeper. On macOS Sequoia+, confirm manually in System Settings > Privacy & Security." | tee -a "$LOG_FILE"
 fi
 
-# Verify Gatekeeper status
-spctl --status 2>>"$LOG_FILE" | grep -q "assessments disabled"
-if [ $? -eq 0 ]; then
-    echo "Verified Gatekeeper is disabled." | tee -a "$LOG_FILE"
-else
-    echo "Warning: Gatekeeper verification failed. Check System Settings > Privacy & Security to confirm." | tee -a "$LOG_FILE"
-fi
-
-# Disable Apple Intelligence (Privacy & Security)
+# Disable Apple Intelligence & Personalized Ads
 apply_setting com.apple.assistant.support "AIConsentStatus" false -bool
-
-# Disable Personalized Ads (Privacy & Security)
 apply_setting com.apple.AdLib "allowApplePersonalizedAdvertising" false -bool
 
-# === Added: Create 'subl' command-line symlink for Sublime Text ===
+# Create 'subl' command-line symlink for Sublime Text
 echo "Creating command-line symlink for Sublime Text..." | tee -a "$LOG_FILE"
-
-# Ensure /usr/local/bin exists and is writable (it usually is on macOS)
 if [ ! -d "/usr/local/bin" ]; then
     echo "Creating /usr/local/bin directory..." | tee -a "$LOG_FILE"
     sudo mkdir -p /usr/local/bin 2>>"$LOG_FILE"
 fi
-
-# Check if the symlink already exists
 if [ -L "/usr/local/bin/subl" ]; then
     echo "Symlink /usr/local/bin/subl already exists. Skipping creation." | tee -a "$LOG_FILE"
 elif [ -e "/usr/local/bin/subl" ]; then
-    echo "A non-symlink file exists at /usr/local/bin/subl. Backing up and replacing..." | tee -a "$LOG_FILE"
+    echo "A non-symlink file exists at /usr/local/bin/subl. Backing up..." | tee -a "$LOG_FILE"
     sudo mv /usr/local/bin/subl /usr/local/bin/subl.bak 2>>"$LOG_FILE"
 fi
-
-# Create the symlink (requires sudo because /usr/local/bin is system-protected)
 sudo ln -s "/Applications/Sublime Text.app/Contents/SharedSupport/bin/subl" /usr/local/bin/subl 2>>"$LOG_FILE"
-
 if [ $? -eq 0 ]; then
     echo "Successfully created 'subl' command-line tool." | tee -a "$LOG_FILE"
 else
-    echo "Failed to create 'subl' symlink. Check permissions or whether Sublime Text is installed." | tee -a "$LOG_FILE"
+    echo "Failed to create 'subl' symlink." | tee -a "$LOG_FILE"
 fi
 
-# Verify the command works
-if command -v subl >/dev/null 2>&1; then
-    echo "Verified: 'subl' command is now available in Terminal." | tee -a "$LOG_FILE"
+# ========================
+# === DOCK CLEANUP SECTION ===
+# ========================
+
+echo "=== Cleaning up macOS Dock ===" | tee -a "$LOG_FILE"
+
+# Install dockutil if not already installed
+if ! command -v dockutil >/dev/null 2>&1; then
+    echo "Installing dockutil via Homebrew..." | tee -a "$LOG_FILE"
+    brew install dockutil 2>>"$LOG_FILE"
+    if [ $? -eq 0 ]; then
+        echo "dockutil installed successfully." | tee -a "$LOG_FILE"
+    else
+        echo "Failed to install dockutil. Skipping Dock cleanup." | tee -a "$LOG_FILE"
+        goto end_dock
+    fi
 else
-    echo "Warning: 'subl' command is not in PATH or not working." | tee -a "$LOG_FILE"
+    echo "dockutil is already installed." | tee -a "$LOG_FILE"
 fi
 
-# Restart Finder to apply changes
+# Remove unwanted stock apps from Dock
+echo "Removing unwanted apps from Dock..." | tee -a "$LOG_FILE"
+
+dockutil --remove "Messages"          --allhomes 2>>"$LOG_FILE"
+dockutil --remove "Mail"              --allhomes 2>>"$LOG_FILE"
+dockutil --remove "Maps"              --allhomes 2>>"$LOG_FILE"
+dockutil --remove "Photos"            --allhomes 2>>"$LOG_FILE"
+dockutil --remove "FaceTime"          --allhomes 2>>"$LOG_FILE"
+dockutil --remove "Phone"             --allhomes 2>>"$LOG_FILE"
+dockutil --remove "Calendar"          --allhomes 2>>"$LOG_FILE"
+dockutil --remove "Contacts"          --allhomes 2>>"$LOG_FILE"
+dockutil --remove "Reminders"         --allhomes 2>>"$LOG_FILE"
+dockutil --remove "Notes"             --allhomes 2>>"$LOG_FILE"
+dockutil --remove "Keynote"           --allhomes 2>>"$LOG_FILE"
+dockutil --remove "Numbers"           --allhomes 2>>"$LOG_FILE"
+dockutil --remove "Pages"             --allhomes 2>>"$LOG_FILE"
+dockutil --remove "Games"             --allhomes 2>>"$LOG_FILE"
+dockutil --remove "iPhone Mirroring"  --allhomes 2>>"$LOG_FILE"
+
+echo "Restarting Dock to apply changes..." | tee -a "$LOG_FILE"
+killall Dock 2>>"$LOG_FILE"
+
+echo "Dock cleanup completed." | tee -a "$LOG_FILE"
+
+:end_dock
+
+# Final restart of Finder
 killall Finder 2>/dev/null
 
-echo "Configuration applied! Check $LOG_FILE for details. Reboot recommended for trackpad, login screen, and Gatekeeper changes." | tee -a "$LOG_FILE"
+echo "=== macOS Configuration Script Finished! ===" | tee -a "$LOG_FILE"
+echo "Check $LOG_FILE for full details." | tee -a "$LOG_FILE"
+echo "Reboot is recommended for some changes (trackpad, login screen, Gatekeeper)." | tee -a "$LOG_FILE"
