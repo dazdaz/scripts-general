@@ -79,6 +79,28 @@ apply_setting() {
 }
 
 # ========================
+# Install Rosetta 2 (for Apple Silicon Macs)
+# ========================
+install_rosetta() {
+    echo "Installing Rosetta 2 (if needed)..." | tee -a "$LOG_FILE"
+    
+    # Check if Rosetta is already installed
+    if [ -f "/Library/Apple/usr/share/rosetta/osx-rosetta2" ] || arch -x86_64 true 2>/dev/null; then
+        echo "Rosetta 2 is already installed." | tee -a "$LOG_FILE"
+        return 0
+    fi
+
+    echo "Rosetta 2 not found. Installing now..." | tee -a "$LOG_FILE"
+    sudo softwareupdate --install-rosetta --agree-to-license 2>>"$LOG_FILE"
+    
+    if [ $? -eq 0 ]; then
+        echo "Rosetta 2 installed successfully." | tee -a "$LOG_FILE"
+    else
+        echo "WARNING: Failed to install Rosetta 2." | tee -a "$LOG_FILE"
+    fi
+}
+
+# ========================
 # Disable Fn/Globe key popup ("Press 🌐 key to" → "Do Nothing")
 # ========================
 disable_globe_key_popup() {
@@ -107,6 +129,9 @@ echo "=== Starting macOS Setup ===" | tee -a "$LOG_FILE"
 # Check Homebrew (no auto-install)
 check_homebrew
 HOMEBREW_INSTALLED=$?
+
+# Install Rosetta 2 early (especially useful for Apple Silicon)
+install_rosetta
 
 # Clear cache
 killall Finder cfprefsd 2>/dev/null
